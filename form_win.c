@@ -1,7 +1,10 @@
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <ncurses.h>
 #include <form.h>
+
+void trim_trailing_whitespace(char *str);
 
 #define TAG_ROWS 1
 #define TAG_COLS 10
@@ -25,10 +28,16 @@ int main()
 	int rows, cols;
 	int maxrows, maxcols;
 	int winrows, wincols;
+	int inp;
+	char tag[TAG_ROWS*TAG_COLS + 1];
+	char desc[NOTE_ROWS*NOTE_COLS + 1];
 
 	initscr();
 	start_color();
 	cbreak();
+	/* Enter is 13 with it, and 10 without it. This should have made a check
+	 *  against KEY_ENTER work, but it didn't. */
+	nonl();
 	noecho();
 	keypad(stdscr, TRUE);	// TODO: Needed?
 
@@ -72,7 +81,55 @@ int main()
 	refresh();
 	wrefresh(window);
 
-	wgetch(window);
+	//while((inp = wgetch(window)) != 3)		// 3 is Ctrl-C.
+	while((inp = wgetch(window)) != 13)		// 13 is enter with nonl(), else 10;
+	{
+		mvprintw(LINES-4, 0, "hey:%d", inp);
+		refresh();
+		switch(inp)
+		{
+			case 9:			// 9 is tab.
+			case KEY_DOWN:
+				form_driver(form, REQ_NEXT_FIELD);
+				// Go to end of the buffer, in case text is already entered.
+				form_driver(form, REQ_END_LINE);
+				break;
+			case KEY_UP:
+				form_driver(form, REQ_NEXT_FIELD);
+				// Go to end of the buffer, in case text is already entered.
+				form_driver(form, REQ_END_LINE);
+				break;
+			case KEY_RIGHT:
+				form_driver(form, REQ_NEXT_CHAR);
+				break;
+			case KEY_LEFT:
+				form_driver(form, REQ_PREV_CHAR);
+				break;
+			case KEY_DC:	// Delete key.
+				form_driver(form, REQ_DEL_CHAR);
+				break;
+			case 127:	// 127 is Backspace.
+				form_driver(form, REQ_PREV_CHAR);
+				form_driver(form, REQ_DEL_CHAR);
+				break;
+			default:
+				form_driver(form, inp);
+				break;
+		}
+	}
+
+	// Need to force validation so that all values are actually stored into
+	// the buffers.
+	form_driver(form, REQ_VALIDATION);
+
+	// The string obtained from field buffer always has the same length
+	// and is padded with spaces if there was not enough user input.
+	strcpy(tag, field_buffer(fields[0], 0));
+	strcpy(desc, field_buffer(fields[1], 0));
+
+	// Trim the excess whitespace at the end.
+	trim_trailing_whitespace(tag);
+	trim_trailing_whitespace(desc);
 
 	unpost_form(form);
 	free_form(form);
@@ -81,5 +138,17 @@ int main()
 
 	endwin();
 
+	printf("%s %s\n", desc, tag);
+	printf("%s %s\n", tag, desc);
+
 	return 0;
 }
+
+void trim_trailing_whitespace(char *str)
+{
+	int i = strlen(str)-1;
+	for( ; i >= 0 && isspace(str[i]); i--)
+		;
+	str[i+1] = '\0';
+}
+
