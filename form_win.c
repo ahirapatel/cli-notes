@@ -5,32 +5,30 @@
 #include <form.h>
 
 void trim_trailing_whitespace(char *str);
+void view_note_form(char *tag, char *note);
 
-#define TAG_ROWS 1
-#define TAG_COLS 10
+#define TAG_ROWS  1
+#define TAG_COLS  10
 #define NOTE_ROWS 4
 #define NOTE_COLS 20
+
+#define TAG_MAX_SIZE     TAG_ROWS*TAG_COLS + 1
+#define NOTE_MAX_SIZE    NOTE_ROWS*NOTE_COLS + 1
 #define GAP 2
 
 #define FORM_START_Y (GAP)
 #define FORM_START_X (strlen(NOTE_STR)+GAP)
 
 #define NOTE_HEADER "New Note"
-#define TAG_STR "Tag (Optional): "
-#define NOTE_STR "Note (Required): "
-#define DONE_STR "Hit Enter When Done"
+#define TAG_STR     "Tag (Optional): "
+#define NOTE_STR    "Note (Required): "
+#define DONE_STR    "Hit Enter When Done"
 
 int main()
 {
-	FIELD *fields[3];
-	FORM *form;
-	WINDOW *window;
-	int rows, cols;
-	int maxrows, maxcols;
-	int winrows, wincols;
-	int inp;
-	char tag[TAG_ROWS*TAG_COLS + 1];
-	char desc[NOTE_ROWS*NOTE_COLS + 1];
+	char *note, *tag;
+	tag = malloc(sizeof(char)*TAG_MAX_SIZE);
+	note = malloc(sizeof(char)*NOTE_MAX_SIZE);
 
 	initscr();
 	start_color();
@@ -42,6 +40,29 @@ int main()
 	keypad(stdscr, TRUE);	// TODO: Needed?
 
 	init_pair(1, COLOR_WHITE, COLOR_BLUE);
+
+	view_note_form(tag, note);
+
+	endwin();
+
+	printf("%s %s\n", note, tag);
+	printf("%s %s\n", tag, note);
+
+	return 0;
+}
+
+void view_note_form(char *tag, char *note)
+{
+	FIELD *fields[3];
+	FORM *form;
+	WINDOW *window;
+	int rows, cols;
+	int maxrows, maxcols;
+	int winrows, wincols;
+	int inp;
+
+	/* TODO: This would probably be better if we I didn't destroy the
+	 * form everytime, but rather just hide it (and clear the contents). */
 
 	//new_field(rows,cols,starty,startx,offscreen,buffers)
 	fields[0] = new_field(TAG_ROWS,  TAG_COLS,  0,     0, 0, 0);
@@ -125,23 +146,17 @@ int main()
 	// The string obtained from field buffer always has the same length
 	// and is padded with spaces if there was not enough user input.
 	strcpy(tag, field_buffer(fields[0], 0));
-	strcpy(desc, field_buffer(fields[1], 0));
+	strcpy(note, field_buffer(fields[1], 0));
 
 	// Trim the excess whitespace at the end.
 	trim_trailing_whitespace(tag);
-	trim_trailing_whitespace(desc);
+	trim_trailing_whitespace(note);
 
 	unpost_form(form);
 	free_form(form);
 	free_field(fields[0]);
 	free_field(fields[1]);
 
-	endwin();
-
-	printf("%s %s\n", desc, tag);
-	printf("%s %s\n", tag, desc);
-
-	return 0;
 }
 
 void trim_trailing_whitespace(char *str)
