@@ -3,9 +3,11 @@
 #include <ctype.h>
 #include <ncurses.h>
 #include <form.h>
+#include <menu.h>
 
 void trim_trailing_whitespace(char *str);
 void view_note_form(char *tag, char *note);
+void draw_list_menu(void);
 
 #define TAG_ROWS  1
 #define TAG_COLS  10
@@ -26,10 +28,6 @@ void view_note_form(char *tag, char *note);
 
 int main()
 {
-	char *note, *tag;
-	tag = malloc(sizeof(char)*TAG_MAX_SIZE);
-	note = malloc(sizeof(char)*NOTE_MAX_SIZE);
-
 	initscr();
 	start_color();
 	cbreak();
@@ -41,12 +39,9 @@ int main()
 
 	init_pair(1, COLOR_WHITE, COLOR_BLUE);
 
-	view_note_form(tag, note);
+	draw_list_menu();
 
 	endwin();
-
-	printf("%s %s\n", note, tag);
-	printf("%s %s\n", tag, note);
 
 	return 0;
 }
@@ -97,16 +92,12 @@ void view_note_form(char *tag, char *note)
 	// derwin(window,rows,cols,rely,relx);
 	set_form_sub(form, derwin(window, rows, cols, FORM_START_Y, FORM_START_X));
 
-	mvprintw(LINES-2, 0, "moomoo");
 	post_form(form);
-	refresh();
 	wrefresh(window);
 
 	//while((inp = wgetch(window)) != 3)		// 3 is Ctrl-C.
 	while((inp = wgetch(window)) != 13)		// 13 is enter with nonl(), else 10;
 	{
-		mvprintw(LINES-4, 0, "hey:%d", inp);
-		refresh();
 		switch(inp)
 		{
 			case 9:			// 9 is tab.
@@ -156,6 +147,7 @@ void view_note_form(char *tag, char *note)
 	free_form(form);
 	free_field(fields[0]);
 	free_field(fields[1]);
+	delwin(window);
 
 }
 
@@ -165,5 +157,132 @@ void trim_trailing_whitespace(char *str)
 	for( ; i >= 0 && isspace(str[i]); i--)
 		;
 	str[i+1] = '\0';
+}
+
+#define ROWS_FOR_HELP 3
+#define NOTE_WINDOW_STR " Notes "
+#define HELP_WINDOW_STR " HELP "
+#define HELP_OPTIONS    "'a' to add note"
+// TODO: Read in from file, remove this test data insert.
+#define TEST_SIZE_ITEMS 15
+void draw_list_menu(void)
+{
+	WINDOW *menu_win, *help_win;
+	MENU *menu;
+	ITEM **items;
+	int items_length = TEST_SIZE_ITEMS;
+	/* TODO: Make this an array of strings, because new_item does not copy
+	 * the string, just uses a pointer to it. */
+	char *tag, *note;
+	int maxrows, maxcols;
+	int i, inp;
+
+	tag = malloc(sizeof(char)*TAG_MAX_SIZE);
+	note = malloc(sizeof(char)*NOTE_MAX_SIZE);
+
+
+	curs_set(0);		// Invisible cursor.
+	getmaxyx(stdscr, maxrows, maxcols);	// This is a macro, so no pointers.
+	menu_win = newwin(maxrows-ROWS_FOR_HELP, maxcols, 0, 0);
+	help_win = newwin(ROWS_FOR_HELP, maxcols, maxrows-ROWS_FOR_HELP, 0);
+	box(menu_win, 0, 0);
+	box(help_win, 0, 0);
+	mvwprintw(menu_win, 0, (maxcols-strlen(NOTE_WINDOW_STR))/2, NOTE_WINDOW_STR);
+	mvwprintw(help_win, 0, (maxcols-strlen(HELP_WINDOW_STR))/2, HELP_WINDOW_STR);
+	mvwprintw(help_win, ROWS_FOR_HELP/2, GAP, HELP_OPTIONS);
+
+	keypad(menu_win, TRUE);
+
+	// TODO: Read in from file, remove this test data insert.
+	items = NULL;
+	items = realloc(items, items_length * sizeof(ITEM *));
+	for(i = 0; i < items_length-1; i++)
+	{
+		items[i] = new_item("wombo", "make sure to womp the womberton");
+	}
+	free_item(items[12]);
+	items[12] = new_item("AAAAAA", "WOOO");
+	items[items_length-1] = NULL;
+
+	menu = new_menu(items);
+	set_menu_win(menu, menu_win);
+	set_menu_sub(menu, derwin(menu_win, maxrows-ROWS_FOR_HELP-GAP, maxcols-GAP, GAP, GAP));
+	set_menu_format(menu, maxrows-ROWS_FOR_HELP-2*GAP, 1);
+	set_menu_pad(menu, '|');
+	set_menu_spacing(menu, 4, 0, 0);
+	set_menu_mark(menu, " o ");
+
+	post_menu(menu);
+	wrefresh(menu_win);
+	wrefresh(help_win);
+
+	// TODO: Make it exit on an actual value, maybe ctrl-c or esc.
+	while((inp = wgetch(menu_win)) != 13)		// This is enter.
+	{
+		switch(inp)
+		{
+			case KEY_DOWN:
+				menu_driver(menu, REQ_DOWN_ITEM);
+				break;
+			case KEY_UP:
+				menu_driver(menu, REQ_UP_ITEM);
+				break;
+			case KEY_NPAGE:
+				menu_driver(menu, REQ_SCR_DPAGE);
+				break;
+			case KEY_PPAGE:
+				menu_driver(menu, REQ_SCR_UPAGE);
+				break;
+			case 'a':
+				curs_set(1);		// Normal cursor.
+				// TODO: Validate tag and note, inside the function, or here.
+				view_note_form(tag, note);
+				curs_set(0);		// Invisible cursor.
+
+				unpost_menu(menu);
+				set_menu_items(menu, NULL);
+
+				// TODO: Call realloc less often.
+				items = realloc(items, (items_length+1) * sizeof(ITEM *));
+				items[items_length-1] = new_item(tag, note);
+				items[items_length] = NULL;
+				items_length++;
+
+				set_menu_items(menu, items);
+				post_menu(menu);
+
+				box(menu_win, 0, 0);
+				mvwprintw(menu_win, 0, (maxcols-strlen(NOTE_WINDOW_STR))/2, NOTE_WINDOW_STR);
+				wrefresh(menu_win);
+				break;
+			default:
+				// TODO: This will become the edit functionality. Soon.
+				unpost_menu(menu);
+				set_menu_items(menu, NULL);
+				free_item(items[12]);
+				items[12] = NULL;
+				items[12] = new_item("BBBBBB", "SADGHd");
+				set_menu_items(menu, items);
+				post_menu(menu);
+				/* TODO: I have no idea why, but reposting the menu breaks the
+				 * window, even if you do wrefresh(), so just redraw the border
+				 * and the title */
+				box(menu_win, 0, 0);
+				mvwprintw(menu_win, 0, (maxcols-strlen(NOTE_WINDOW_STR))/2, NOTE_WINDOW_STR);
+				wrefresh(menu_win);
+				break;
+		}
+	}
+
+	unpost_menu(menu);
+	free_menu(menu);
+	for(i = 0; i < items_length-1; i++)
+	{
+		free_item(items[i]);
+	}
+
+	free(items);
+	free(tag);
+	free(note);
 }
 
