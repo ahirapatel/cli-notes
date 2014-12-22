@@ -9,6 +9,7 @@ void trim_trailing_whitespace(char *str);
 void view_note_form(char *tag, char *note);
 void draw_list_menu(void);
 ITEM ** load_items(int *items_len);
+void store_items(ITEM **items, int items_len);
 
 #define TAG_ROWS  1
 #define TAG_COLS  10
@@ -63,7 +64,7 @@ void view_note_form(char *tag, char *note)
 	//new_field(rows,cols,starty,startx,offscreen,buffers)
 	fields[0] = new_field(TAG_ROWS,  TAG_COLS,  0,     0, 0, 0);
 	fields[1] = new_field(NOTE_ROWS, NOTE_COLS, 0+TAG_ROWS+GAP-1, 0, 0, 0);
-	fields[2] = NULL;	// TODO: Examples do this, check why.
+	fields[2] = NULL;
 
 	set_field_back(fields[0], A_UNDERLINE);
 	field_opts_off(fields[0], O_AUTOSKIP);
@@ -268,7 +269,9 @@ void draw_list_menu(void)
 		}
 	}
 
-	// TODO: Writeback to the NOTES_FILE.
+	// Writeback to text file.
+	store_items(items, items_len);
+	// Free all allocated resources.
 	unpost_menu(menu);
 	free_menu(menu);
 	for(i = 0; i < items_len-1; i++)
@@ -284,6 +287,8 @@ void draw_list_menu(void)
 
 // TODO: Change later. Used for testing now.
 #define NOTES_FILE "testfile.txt"
+// TODO: Assumes test file has not been modified by outside sources.
+// TODO: Should probably handle errors.
 ITEM ** load_items(int *items_len)
 {
 	FILE *f;
@@ -293,7 +298,7 @@ ITEM ** load_items(int *items_len)
 	int line_count, i;
 
 	// Get the line count, so we can initialize the size of the items array.
-	f = fopen(NOTES_FILE, "r+");
+	f = fopen(NOTES_FILE, "r");
 	line_count = 0;
 	while((ch=fgetc(f)) != EOF)
 	{
@@ -321,4 +326,14 @@ ITEM ** load_items(int *items_len)
 	// entries + NULL at the end.
 	*items_len = line_count + 1;
 	return items;
+}
+
+// TODO: Should probably handle errors.
+void store_items(ITEM **items, int items_len)
+{
+	int i;
+	FILE *f = fopen(NOTES_FILE, "w");
+	for(i = 0; i < items_len-1; i++)
+		fprintf(f, "%s\t%s\n", items[i]->name.str, items[i]->description.str);
+	fclose(f);
 }
