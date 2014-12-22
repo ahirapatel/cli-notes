@@ -8,6 +8,7 @@
 void trim_trailing_whitespace(char *str);
 void view_note_form(char *tag, char *note);
 void draw_list_menu(void);
+ITEM ** load_items(int *items_len);
 
 #define TAG_ROWS  1
 #define TAG_COLS  10
@@ -163,23 +164,15 @@ void trim_trailing_whitespace(char *str)
 #define NOTE_WINDOW_STR " Notes "
 #define HELP_WINDOW_STR " HELP "
 #define HELP_OPTIONS    "'a' to add note"
-// TODO: Read in from file, remove this test data insert.
-#define TEST_SIZE_ITEMS 15
 void draw_list_menu(void)
 {
 	WINDOW *menu_win, *help_win;
 	MENU *menu;
 	ITEM **items;
-	int items_length = TEST_SIZE_ITEMS;
-	/* TODO: Make this an array of strings, because new_item does not copy
-	 * the string, just uses a pointer to it. */
 	char *tag, *note;
 	int maxrows, maxcols;
 	int i, inp;
-
-	tag = malloc(sizeof(char)*TAG_MAX_SIZE);
-	note = malloc(sizeof(char)*NOTE_MAX_SIZE);
-
+	int items_len;
 
 	curs_set(0);		// Invisible cursor.
 	getmaxyx(stdscr, maxrows, maxcols);	// This is a macro, so no pointers.
@@ -193,16 +186,8 @@ void draw_list_menu(void)
 
 	keypad(menu_win, TRUE);
 
-	// TODO: Read in from file, remove this test data insert.
-	items = NULL;
-	items = realloc(items, items_length * sizeof(ITEM *));
-	for(i = 0; i < items_length-1; i++)
-	{
-		items[i] = new_item("wombo", "make sure to womp the womberton");
-	}
-	free_item(items[12]);
-	items[12] = new_item("AAAAAA", "WOOO");
-	items[items_length-1] = NULL;
+	// Load items from the text file where we store it.
+	items = load_items(&items_len);
 
 	menu = new_menu(items);
 	set_menu_win(menu, menu_win);
@@ -234,6 +219,9 @@ void draw_list_menu(void)
 				menu_driver(menu, REQ_SCR_UPAGE);
 				break;
 			case 'a':
+				tag = malloc(TAG_MAX_SIZE * sizeof(char));
+				note = malloc(NOTE_MAX_SIZE * sizeof(char));
+
 				curs_set(1);		// Normal cursor.
 				// TODO: Validate tag and note, inside the function, or here.
 				view_note_form(tag, note);
@@ -243,14 +231,20 @@ void draw_list_menu(void)
 				set_menu_items(menu, NULL);
 
 				// TODO: Call realloc less often.
-				items = realloc(items, (items_length+1) * sizeof(ITEM *));
-				items[items_length-1] = new_item(tag, note);
-				items[items_length] = NULL;
-				items_length++;
+				items = realloc(items, (items_len+1) * sizeof(ITEM *));
+				items[items_len-1] = new_item(tag, note);
+				items[items_len] = NULL;
+				items_len++;
+
+				// These pointers will be freed by looping through items later.
+				tag = note = NULL;
 
 				set_menu_items(menu, items);
 				post_menu(menu);
 
+				/* TODO: I have no idea why, but reposting the menu breaks the
+				 * window, even if you do wrefresh(), so just redraw the border
+				 * and the title */
 				box(menu_win, 0, 0);
 				mvwprintw(menu_win, 0, (maxcols-strlen(NOTE_WINDOW_STR))/2, NOTE_WINDOW_STR);
 				wrefresh(menu_win);
@@ -259,9 +253,9 @@ void draw_list_menu(void)
 				// TODO: This will become the edit functionality. Soon.
 				unpost_menu(menu);
 				set_menu_items(menu, NULL);
-				free_item(items[12]);
-				items[12] = NULL;
-				items[12] = new_item("BBBBBB", "SADGHd");
+				free_item(items[2]);
+				items[2] = NULL;
+				items[2] = new_item("BBBBBB", "SADGHd");
 				set_menu_items(menu, items);
 				post_menu(menu);
 				/* TODO: I have no idea why, but reposting the menu breaks the
@@ -274,15 +268,57 @@ void draw_list_menu(void)
 		}
 	}
 
+	// TODO: Writeback to the NOTES_FILE.
 	unpost_menu(menu);
 	free_menu(menu);
-	for(i = 0; i < items_length-1; i++)
+	for(i = 0; i < items_len-1; i++)
 	{
+		free((void *)items[i]->name.str);
+		free((void *)items[i]->description.str);
 		free_item(items[i]);
 	}
-
 	free(items);
-	free(tag);
-	free(note);
+	delwin(help_win);
+	delwin(menu_win);
 }
 
+// TODO: Change later. Used for testing now.
+#define NOTES_FILE "testfile.txt"
+ITEM ** load_items(int *items_len)
+{
+	FILE *f;
+	char ch;
+	char *tag, *note, *line;
+	ITEM **items = NULL;
+	int line_count, i;
+
+	// Get the line count, so we can initialize the size of the items array.
+	f = fopen(NOTES_FILE, "r+");
+	line_count = 0;
+	while((ch=fgetc(f)) != EOF)
+	{
+		if(ch == '\n')
+			line_count++;
+	}
+	rewind(f);
+
+	items = realloc(items, (line_count+1) * sizeof(ITEM *));
+	line = malloc(sizeof(char) * (TAG_MAX_SIZE + NOTE_MAX_SIZE));
+	for(i = 0; i < line_count; i++)
+	{
+		tag = malloc(TAG_MAX_SIZE * sizeof(char));
+		note = malloc(NOTE_MAX_SIZE * sizeof(char));
+		// Read in all characters on the line, but the newline.
+		fscanf(f, "%[^\n]\n", line);
+		strcpy(tag, strtok(line, "\t"));
+		strcpy(note, strtok(NULL, "\t"));
+		items[i] = new_item(tag, note);
+	}
+	free(line);
+	items[line_count] = NULL;
+	fclose(f);
+
+	// entries + NULL at the end.
+	*items_len = line_count + 1;
+	return items;
+}
