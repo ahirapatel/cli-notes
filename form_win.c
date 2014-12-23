@@ -299,6 +299,13 @@ ITEM ** load_items(int *items_len)
 
 	// Get the line count, so we can initialize the size of the items array.
 	f = fopen(NOTES_FILE, "r");
+	if(f == NULL)
+	{
+		*items_len = 1;
+		items = realloc(items, sizeof(ITEM *));
+		items[0] = NULL;
+		return items;
+	}
 	line_count = 0;
 	while((ch=fgetc(f)) != EOF)
 	{
