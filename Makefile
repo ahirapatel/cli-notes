@@ -1,4 +1,4 @@
 all:
-	gcc -Wall -lncurses -lform -lmenu -g -o form_win form_win.c
+	gcc -o form_win form_win.c -Wall -lncurses -lform -lmenu -g
 clean:
 	rm form_win

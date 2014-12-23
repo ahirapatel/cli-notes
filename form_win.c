@@ -122,7 +122,8 @@ void view_note_form(char *tag, char *note)
 			case KEY_DC:	// Delete key.
 				form_driver(form, REQ_DEL_CHAR);
 				break;
-			case 127:	// 127 is Backspace.
+			case KEY_BACKSPACE:
+			case 127:	// 127 is Backspace on my system.
 				form_driver(form, REQ_PREV_CHAR);
 				form_driver(form, REQ_DEL_CHAR);
 				break;
