@@ -177,7 +177,7 @@ void trim_trailing_whitespace(char *str)
 #define ROWS_FOR_HELP 3
 #define NOTE_WINDOW_STR " Notes "
 #define HELP_WINDOW_STR " HELP "
-#define HELP_OPTIONS    "'a' to add note"
+#define HELP_OPTIONS    "'a' to add note | | 'e' to edit note | | 'd' to delete note"
 void draw_list_menu(void)
 {
 	WINDOW *menu_win, *help_win;
@@ -271,6 +271,8 @@ void draw_list_menu(void)
 				tag = (char *) item_name(temp);
 				note = (char *) item_description(temp);
 				idx = item_index(temp);
+				if(!temp)
+					continue;
 
 				unpost_menu(menu);
 				set_menu_items(menu, NULL);
@@ -285,6 +287,39 @@ void draw_list_menu(void)
 
 				set_menu_items(menu, items);
 				set_current_item(menu, items[idx]);
+				post_menu(menu);
+
+				/* TODO: I have no idea why, but reposting the menu breaks the
+				 * window, even if you do wrefresh(), so just redraw the border
+				 * and the title */
+				box(menu_win, 0, 0);
+				mvwprintw(menu_win, 0, (maxcols-strlen(NOTE_WINDOW_STR))/2, NOTE_WINDOW_STR);
+				wrefresh(menu_win);
+				break;
+			case 'd':
+				temp = current_item(menu);
+				tag = (char *) item_name(temp);
+				note = (char *) item_description(temp);
+				idx = item_index(temp);
+				if(!temp)
+					continue;
+
+				unpost_menu(menu);
+				set_menu_items(menu, NULL);
+				free(tag);
+				free(note);
+				free_item(items[idx]);
+
+				items_len--;
+				// TODO: Stop reallocing so much, keep track of free space.
+				items = realloc(items, items_len * sizeof(ITEM *));
+				// Shift items left to take up space from deletion.
+				for(i = idx; i < items_len-1; i++)
+					items[i] = items[i+1];
+				items[items_len-1] = NULL;
+
+				set_menu_items(menu, items);
+				set_current_item(menu, items[idx == 0 ? 0 : --idx]);
 				post_menu(menu);
 
 				/* TODO: I have no idea why, but reposting the menu breaks the
