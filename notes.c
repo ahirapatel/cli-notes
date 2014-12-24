@@ -231,6 +231,7 @@ void draw_list_menu(void)
 			case 'a':
 				tag = malloc(TAG_MAX_SIZE * sizeof(char));
 				note = malloc(NOTE_MAX_SIZE * sizeof(char));
+				temp = current_item(menu);
 
 				curs_set(1);		// Normal cursor.
 				// TODO: Validate tag and note, inside the function, or here.
@@ -250,6 +251,7 @@ void draw_list_menu(void)
 				tag = note = NULL;
 
 				set_menu_items(menu, items);
+				set_current_item(menu, temp);
 				post_menu(menu);
 
 				/* TODO: I have no idea why, but reposting the menu breaks the
@@ -277,6 +279,7 @@ void draw_list_menu(void)
 				items[idx] = new_item(tag, note);
 
 				set_menu_items(menu, items);
+				set_current_item(menu, items[idx]);
 				post_menu(menu);
 
 				/* TODO: I have no idea why, but reposting the menu breaks the
