@@ -61,60 +61,64 @@ void view_note_form(char *tag, char *note, bool init)
 	/* TODO: This would probably be better if we I didn't destroy the
 	 * form everytime, but rather just hide it (and clear the contents). */
 
+	// Make new fields and initialize them
 	//new_field(rows,cols,starty,startx,offscreen,buffers)
-	fields[0] = new_field(TAG_ROWS,  TAG_COLS,  0,     0, 0, 0);
+	fields[0] = new_field(TAG_ROWS,  TAG_COLS,  0,                0, 0, 0);
 	fields[1] = new_field(NOTE_ROWS, NOTE_COLS, 0+TAG_ROWS+GAP-1, 0, 0, 0);
 	fields[2] = NULL;
-
 	set_field_back(fields[0], A_UNDERLINE);
 	field_opts_off(fields[0], O_AUTOSKIP);
 	field_opts_on(fields[0], O_BLANK);
-	//set_field_type(fields[0], TYPE_ALPHA, 0);
 	set_field_back(fields[1], A_UNDERLINE);
 	field_opts_off(fields[1], O_AUTOSKIP);
 	field_opts_on(fields[1], O_BLANK);
-
+	// Make a new form with the fields.
 	form = new_form(fields);
-	scale_form(form, &rows, &cols);
-	getmaxyx(stdscr, maxrows, maxcols);	// This is a macro, so no pointers.
 
-	//newwin(rows,cols,starty,startx)
+	// Make a new window for the form, with the appropriate size.
+	scale_form(form, &rows, &cols);		// Get minimum size needed for form.
+	getmaxyx(stdscr, maxrows, maxcols);	// This is a macro, so no pointers.
 	winrows = rows + FORM_START_Y + GAP;
 	wincols = cols + FORM_START_X + GAP;
+	// Center the form+window in the center of the screen.
+	//newwin(rows,cols,starty,startx)
 	window = newwin(winrows, wincols, (maxrows-winrows)/2, (maxcols-wincols)/2);
 	keypad(window, TRUE);	// TODO: Needed?
 
+	// Draw a border around the form and print form info text.
 	box(window, 0, 0);
 	mvwaddstr(window, 0,       (wincols-strlen(NOTE_HEADER))/2, NOTE_HEADER);
 	mvwaddstr(window, FORM_START_Y,     GAP, TAG_STR);
 	mvwaddstr(window, FORM_START_Y+TAG_ROWS+GAP-1, GAP, NOTE_STR);
 	mvwaddstr(window, winrows-1, (wincols-strlen(DONE_STR))/2, DONE_STR);
 
+	// Set form window and subwindow.
 	set_form_win(form, window);
 	// derwin(window,rows,cols,rely,relx);
 	set_form_sub(form, derwin(window, rows, cols, FORM_START_Y, FORM_START_X));
 
+	// Initialize the form with the strings passed in if needed.
 	if(init)
 	{
 		set_field_buffer(fields[0], 0, tag);
 		set_field_buffer(fields[1], 0, note);
 	}
 
+	// Draw form and window.
 	post_form(form);
-	form_driver(form, REQ_END_LINE);
+	form_driver(form, REQ_END_LINE);	// if(init) then move to end of buffer.
 	wrefresh(window);
 
-	//while((inp = wgetch(window)) != 3)		// 3 is Ctrl-C.
+	// TODO: Why is the enter key defined in ncurses not working for me?
+	// Exit the form with enter, else process the request.
 	while((inp = wgetch(window)) != 13)		// 13 is enter with nonl(), else 10;
 	{
 		switch(inp)
 		{
+			// TODO: Check for ncurses tab definition.
+			// Tab, up arrow and down arrow are equal in a two field form.
 			case 9:			// 9 is tab.
 			case KEY_DOWN:
-				form_driver(form, REQ_NEXT_FIELD);
-				// Go to end of the buffer, in case text is already entered.
-				form_driver(form, REQ_END_LINE);
-				break;
 			case KEY_UP:
 				form_driver(form, REQ_NEXT_FIELD);
 				// Go to end of the buffer, in case text is already entered.
@@ -129,12 +133,12 @@ void view_note_form(char *tag, char *note, bool init)
 			case KEY_DC:	// Delete key.
 				form_driver(form, REQ_DEL_CHAR);
 				break;
-			case KEY_BACKSPACE:
+			case KEY_BACKSPACE:		// TODO: Why does this define not work on my system?
 			case 127:	// 127 is Backspace on my system.
 				form_driver(form, REQ_PREV_CHAR);
 				form_driver(form, REQ_DEL_CHAR);
 				break;
-			default:
+			default:		// Pass anything else to the field.
 				form_driver(form, inp);
 				break;
 		}
@@ -145,7 +149,7 @@ void view_note_form(char *tag, char *note, bool init)
 	form_driver(form, REQ_VALIDATION);
 
 	// The string obtained from field buffer always has the same length
-	// and is padded with spaces if there was not enough user input.
+	// and is padded with spaces if there was not enough user input to fill it.
 	strcpy(tag, field_buffer(fields[0], 0));
 	strcpy(note, field_buffer(fields[1], 0));
 
@@ -153,6 +157,7 @@ void view_note_form(char *tag, char *note, bool init)
 	trim_trailing_whitespace(tag);
 	trim_trailing_whitespace(note);
 
+	// Clean up.
 	unpost_form(form);
 	free_form(form);
 	free_field(fields[0]);
@@ -324,7 +329,7 @@ ITEM ** load_items(int *items_len)
 
 	// Get the line count, so we can initialize the size of the items array.
 	f = fopen(NOTES_FILE, "r");
-	if(f == NULL)
+	if(f == NULL)	// No file present, start with nothing.
 	{
 		*items_len = 1;
 		items = realloc(items, sizeof(ITEM *));
@@ -339,6 +344,7 @@ ITEM ** load_items(int *items_len)
 	}
 	rewind(f);
 
+	// Allocate items array and create items.
 	items = realloc(items, (line_count+1) * sizeof(ITEM *));
 	line = malloc(sizeof(char) * (TAG_MAX_SIZE + NOTE_MAX_SIZE));
 	for(i = 0; i < line_count; i++)
