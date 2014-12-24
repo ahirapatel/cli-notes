@@ -6,7 +6,7 @@
 #include <menu.h>
 
 void trim_trailing_whitespace(char *str);
-void view_note_form(char *tag, char *note);
+void view_note_form(char *tag, char *note, bool init);
 void draw_list_menu(void);
 ITEM ** load_items(int *items_len);
 void store_items(ITEM **items, int items_len);
@@ -48,7 +48,7 @@ int main()
 	return 0;
 }
 
-void view_note_form(char *tag, char *note)
+void view_note_form(char *tag, char *note, bool init)
 {
 	FIELD *fields[3];
 	FORM *form;
@@ -94,7 +94,14 @@ void view_note_form(char *tag, char *note)
 	// derwin(window,rows,cols,rely,relx);
 	set_form_sub(form, derwin(window, rows, cols, FORM_START_Y, FORM_START_X));
 
+	if(init)
+	{
+		set_field_buffer(fields[0], 0, tag);
+		set_field_buffer(fields[1], 0, note);
+	}
+
 	post_form(form);
+	form_driver(form, REQ_END_LINE);
 	wrefresh(window);
 
 	//while((inp = wgetch(window)) != 3)		// 3 is Ctrl-C.
@@ -171,9 +178,10 @@ void draw_list_menu(void)
 	WINDOW *menu_win, *help_win;
 	MENU *menu;
 	ITEM **items;
+	ITEM *temp;
 	char *tag, *note;
 	int maxrows, maxcols;
-	int i, inp;
+	int i, inp, idx;
 	int items_len;
 
 	curs_set(0);		// Invisible cursor.
@@ -226,7 +234,7 @@ void draw_list_menu(void)
 
 				curs_set(1);		// Normal cursor.
 				// TODO: Validate tag and note, inside the function, or here.
-				view_note_form(tag, note);
+				view_note_form(tag, note, FALSE);
 				curs_set(0);		// Invisible cursor.
 
 				unpost_menu(menu);
@@ -251,21 +259,34 @@ void draw_list_menu(void)
 				mvwprintw(menu_win, 0, (maxcols-strlen(NOTE_WINDOW_STR))/2, NOTE_WINDOW_STR);
 				wrefresh(menu_win);
 				break;
-			default:
-				// TODO: This will become the edit functionality. Soon.
+			case 'e':
+				temp = current_item(menu);
+				tag = (char *) item_name(temp);
+				note = (char *) item_description(temp);
+				idx = item_index(temp);
+
 				unpost_menu(menu);
 				set_menu_items(menu, NULL);
-				free_item(items[2]);
-				items[2] = NULL;
-				items[2] = new_item("BBBBBB", "SADGHd");
+
+				curs_set(1);		// Normal cursor.
+				// TODO: Validate tag and note, inside the function, or here.
+				view_note_form(tag, note, TRUE);
+				curs_set(0);		// Invisible cursor.
+
+				free_item(items[idx]);
+				items[idx] = new_item(tag, note);
+
 				set_menu_items(menu, items);
 				post_menu(menu);
+
 				/* TODO: I have no idea why, but reposting the menu breaks the
 				 * window, even if you do wrefresh(), so just redraw the border
 				 * and the title */
 				box(menu_win, 0, 0);
 				mvwprintw(menu_win, 0, (maxcols-strlen(NOTE_WINDOW_STR))/2, NOTE_WINDOW_STR);
 				wrefresh(menu_win);
+				break;
+			default:
 				break;
 		}
 	}
