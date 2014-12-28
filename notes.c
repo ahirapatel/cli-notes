@@ -107,6 +107,7 @@ void view_note_form(char *tag, char *note, bool init)
 	// Draw form and window.
 	post_form(form);
 	form_driver(form, REQ_END_LINE);	// if(init) then move to end of buffer.
+	curs_set(1);		// Normal cursor.
 	wrefresh(window);
 
 	// TODO: Why is the enter key defined in ncurses not working for me?
@@ -164,6 +165,7 @@ void view_note_form(char *tag, char *note, bool init)
 	free_field(fields[1]);
 	delwin(window);
 
+	curs_set(0);		// Invisible cursor.
 }
 
 void trim_trailing_whitespace(char *str)
@@ -238,10 +240,8 @@ void draw_list_menu(void)
 				note = malloc(NOTE_MAX_SIZE * sizeof(char));
 				temp = current_item(menu);
 
-				curs_set(1);		// Normal cursor.
 				// TODO: Validate tag and note, inside the function, or here.
 				view_note_form(tag, note, FALSE);
-				curs_set(0);		// Invisible cursor.
 
 				unpost_menu(menu);
 				set_menu_items(menu, NULL);
@@ -277,10 +277,8 @@ void draw_list_menu(void)
 				unpost_menu(menu);
 				set_menu_items(menu, NULL);
 
-				curs_set(1);		// Normal cursor.
 				// TODO: Validate tag and note, inside the function, or here.
 				view_note_form(tag, note, TRUE);
-				curs_set(0);		// Invisible cursor.
 
 				free_item(items[idx]);
 				items[idx] = new_item(tag, note);
