@@ -11,6 +11,8 @@ void draw_list_menu(void);
 ITEM ** load_items(int *items_len);
 void store_items(ITEM **items, int items_len);
 void shift_items_left(ITEM **items, int start_index, int length);
+int filter_on_tag(ITEM **src, ITEM **dst, int length, char *string);
+int filter_on_desc(ITEM **src, ITEM **dst, int length, char *string);
 void draw_menu_win(WINDOW *win);
 void draw_help_win(WINDOW *win);
 
@@ -182,16 +184,18 @@ void trim_trailing_whitespace(char *str)
 #define ROWS_FOR_HELP 3
 #define NOTE_WINDOW_STR " Notes "
 #define HELP_WINDOW_STR " HELP "
+#define HELP_OPTIONS    "'a' to add note | | 'e' to edit note | | 'd' to delete note | | 'f' to filter"
+#define FILTER_STRING   "Enter text to filter on: "
 void draw_list_menu(void)
 {
 	WINDOW *menu_win, *help_win;
 	MENU *menu;
-	ITEM **items;
+	ITEM **items, **filtered=NULL;
 	ITEM *temp;
 	char *tag, *note;
 	int maxrows, maxcols;
 	int i, inp, idx;
-	int items_len;
+	int items_len, filter_len;
 
 	curs_set(0);		// Invisible cursor.
 	getmaxyx(stdscr, maxrows, maxcols);	// This is a macro, so no pointers.
@@ -308,6 +312,53 @@ void draw_list_menu(void)
 
 				draw_menu_win(menu_win);
 				break;
+			case 'f':		// Filter by tags.
+				// TODO: Filter by description.
+				// TODO: Do something when no filter matches.
+				// TODO: Does delete and edit, etc. work when filtered? Doubt it.
+				tag = malloc(TAG_MAX_SIZE * sizeof(char));
+
+				mvwprintw(help_win, ROWS_FOR_HELP/2, GAP, FILTER_STRING);
+				wclrtoeol(help_win);
+
+				curs_set(1);
+				echo();
+				wgetnstr(help_win, tag, (TAG_MAX_SIZE-1) * sizeof(char));
+				noecho();
+				curs_set(0);
+
+				if(!filtered)
+				{
+					filtered = calloc(items_len, sizeof(ITEM *));
+					filter_len = filter_on_tag(items, filtered, items_len, tag);
+				}
+				else
+				{
+					filter_len = filter_on_tag(filtered, filtered, filter_len, tag);
+				}
+				free(tag);
+
+				unpost_menu(menu);
+				set_menu_items(menu, filtered);
+				post_menu(menu);
+
+				draw_help_win(help_win);
+				draw_menu_win(menu_win);
+				break;
+			case 'c':		// Clear filter.
+				if(filtered)
+				{
+					free(filtered);
+					filtered = NULL;
+
+					unpost_menu(menu);
+					set_menu_items(menu, items);
+					set_menu_items(menu, items);
+					post_menu(menu);
+
+					draw_menu_win(menu_win);
+				}
+				break;
 			default:
 				break;
 		}
@@ -325,6 +376,8 @@ void draw_list_menu(void)
 		free_item(items[i]);
 	}
 	free(items);
+	if(filtered)
+		free(filtered);
 	delwin(help_win);
 	delwin(menu_win);
 }
@@ -396,6 +449,30 @@ void shift_items_left(ITEM **items, int start_index, int length)
 	for(i = start_index; i < length-1; i++)
 		items[i] = items[i+1];
 	items[length-1] = NULL;
+}
+
+int filter_on_tag(ITEM **src, ITEM **dst, int length, char *string)
+{
+	int i, filter_idx;
+	for(i = 0, filter_idx = 0; i < length-1; i++)
+	{
+		if(strstr(item_name(src[i]), string))
+			dst[filter_idx++] = src[i];
+	}
+	dst[filter_idx] = NULL;
+	return filter_idx+1;
+}
+
+int filter_on_desc(ITEM **src, ITEM **dst, int length, char *string)
+{
+	int i, filter_idx;
+	for(i = 0, filter_idx = 0; i < length-1; i++)
+	{
+		if(strstr(item_description(src[i]), string))
+			dst[filter_idx++] = src[i];
+	}
+	dst[filter_idx] = NULL;
+	return filter_idx+1;
 }
 
 /* TODO: I have no idea why, but reposting the menu breaks the
