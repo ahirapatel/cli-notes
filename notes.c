@@ -10,6 +10,9 @@ void view_note_form(char *tag, char *note, bool init);
 void draw_list_menu(void);
 ITEM ** load_items(int *items_len);
 void store_items(ITEM **items, int items_len);
+void shift_items_left(ITEM **items, int start_index, int length);
+void draw_menu_win(WINDOW *win);
+void draw_help_win(WINDOW *win);
 
 #define TAG_ROWS  1
 #define TAG_COLS  10
@@ -179,7 +182,6 @@ void trim_trailing_whitespace(char *str)
 #define ROWS_FOR_HELP 3
 #define NOTE_WINDOW_STR " Notes "
 #define HELP_WINDOW_STR " HELP "
-#define HELP_OPTIONS    "'a' to add note | | 'e' to edit note | | 'd' to delete note"
 void draw_list_menu(void)
 {
 	WINDOW *menu_win, *help_win;
@@ -195,11 +197,6 @@ void draw_list_menu(void)
 	getmaxyx(stdscr, maxrows, maxcols);	// This is a macro, so no pointers.
 	menu_win = newwin(maxrows-ROWS_FOR_HELP, maxcols, 0, 0);
 	help_win = newwin(ROWS_FOR_HELP, maxcols, maxrows-ROWS_FOR_HELP, 0);
-	box(menu_win, 0, 0);
-	box(help_win, 0, 0);
-	mvwprintw(menu_win, 0, (maxcols-strlen(NOTE_WINDOW_STR))/2, NOTE_WINDOW_STR);
-	mvwprintw(help_win, 0, (maxcols-strlen(HELP_WINDOW_STR))/2, HELP_WINDOW_STR);
-	mvwprintw(help_win, ROWS_FOR_HELP/2, GAP, HELP_OPTIONS);
 
 	keypad(menu_win, TRUE);
 
@@ -215,8 +212,8 @@ void draw_list_menu(void)
 	set_menu_mark(menu, " o ");
 
 	post_menu(menu);
-	wrefresh(menu_win);
-	wrefresh(help_win);
+	draw_menu_win(menu_win);
+	draw_help_win(help_win);
 
 	// TODO: Make it exit on an actual value, maybe ctrl-c or esc.
 	while((inp = wgetch(menu_win)) != 13)		// This is enter.
@@ -259,12 +256,7 @@ void draw_list_menu(void)
 				set_current_item(menu, temp);
 				post_menu(menu);
 
-				/* TODO: I have no idea why, but reposting the menu breaks the
-				 * window, even if you do wrefresh(), so just redraw the border
-				 * and the title */
-				box(menu_win, 0, 0);
-				mvwprintw(menu_win, 0, (maxcols-strlen(NOTE_WINDOW_STR))/2, NOTE_WINDOW_STR);
-				wrefresh(menu_win);
+				draw_menu_win(menu_win);
 				break;
 			case 'e':
 				temp = current_item(menu);
@@ -287,18 +279,14 @@ void draw_list_menu(void)
 				set_current_item(menu, items[idx]);
 				post_menu(menu);
 
-				/* TODO: I have no idea why, but reposting the menu breaks the
-				 * window, even if you do wrefresh(), so just redraw the border
-				 * and the title */
-				box(menu_win, 0, 0);
-				mvwprintw(menu_win, 0, (maxcols-strlen(NOTE_WINDOW_STR))/2, NOTE_WINDOW_STR);
-				wrefresh(menu_win);
+				draw_menu_win(menu_win);
 				break;
 			case 'd':
 				temp = current_item(menu);
 				tag = (char *) item_name(temp);
 				note = (char *) item_description(temp);
 				idx = item_index(temp);
+				// If no item is selected do nothing.
 				if(!temp)
 					continue;
 
@@ -312,20 +300,13 @@ void draw_list_menu(void)
 				// TODO: Stop reallocing so much, keep track of free space.
 				items = realloc(items, items_len * sizeof(ITEM *));
 				// Shift items left to take up space from deletion.
-				for(i = idx; i < items_len-1; i++)
-					items[i] = items[i+1];
-				items[items_len-1] = NULL;
+				shift_items_left(items, idx, items_len);
 
 				set_menu_items(menu, items);
 				set_current_item(menu, items[idx == 0 ? 0 : --idx]);
 				post_menu(menu);
 
-				/* TODO: I have no idea why, but reposting the menu breaks the
-				 * window, even if you do wrefresh(), so just redraw the border
-				 * and the title */
-				box(menu_win, 0, 0);
-				mvwprintw(menu_win, 0, (maxcols-strlen(NOTE_WINDOW_STR))/2, NOTE_WINDOW_STR);
-				wrefresh(menu_win);
+				draw_menu_win(menu_win);
 				break;
 			default:
 				break;
@@ -407,4 +388,34 @@ void store_items(ITEM **items, int items_len)
 	for(i = 0; i < items_len-1; i++)
 		fprintf(f, "%s\t%s\n", items[i]->name.str, items[i]->description.str);
 	fclose(f);
+}
+
+void shift_items_left(ITEM **items, int start_index, int length)
+{
+	int i;
+	for(i = start_index; i < length-1; i++)
+		items[i] = items[i+1];
+	items[length-1] = NULL;
+}
+
+/* TODO: I have no idea why, but reposting the menu breaks the
+ * window, even if you do wrefresh(), so just redraw the border
+ * and the title */
+void draw_menu_win(WINDOW *win)
+{
+	int rows, cols;
+	getmaxyx(win, rows, cols);
+	box(win, 0, 0);
+	mvwprintw(win, 0, (cols-strlen(NOTE_WINDOW_STR))/2, NOTE_WINDOW_STR);
+	wrefresh(win);
+}
+
+void draw_help_win(WINDOW *win)
+{
+	int rows, cols;
+	getmaxyx(win, rows, cols);
+	box(win, 0, 0);
+	mvwprintw(win, 0, (cols-strlen(HELP_WINDOW_STR))/2, HELP_WINDOW_STR);
+	mvwprintw(win, ROWS_FOR_HELP/2, GAP, HELP_OPTIONS);
+	wrefresh(win);
 }
