@@ -78,6 +78,7 @@ void view_note_form(char *tag, char *note, bool init)
 	field_opts_on(fields[0], O_BLANK);
 	set_field_back(fields[1], A_UNDERLINE);
 	field_opts_off(fields[1], O_AUTOSKIP);
+	field_opts_off(fields[1], O_WRAP);
 	field_opts_on(fields[1], O_BLANK);
 	// Make a new form with the fields.
 	form = new_form(fields);
@@ -183,6 +184,7 @@ void trim_trailing_whitespace(char *str)
 	str[i+1] = '\0';
 }
 
+// TODO: Better resizing.
 #define ROWS_FOR_HELP 3
 #define NOTE_WINDOW_STR " Notes "
 #define HELP_WINDOW_STR " HELP "
