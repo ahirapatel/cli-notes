@@ -15,6 +15,8 @@ int filter_on_tag(ITEM **src, ITEM **dst, int length, char *string);
 int filter_on_desc(ITEM **src, ITEM **dst, int length, char *string);
 void draw_menu_win(WINDOW *win);
 void draw_help_win(WINDOW *win);
+int find_item_index(ITEM **items, ITEM *key);
+int refilter_tag(ITEM **src, ITEM **dst, int items_len, char **seq, int seq_len);
 
 #define TAG_ROWS  1
 #define TAG_COLS  10
@@ -184,18 +186,18 @@ void trim_trailing_whitespace(char *str)
 #define ROWS_FOR_HELP 3
 #define NOTE_WINDOW_STR " Notes "
 #define HELP_WINDOW_STR " HELP "
-#define HELP_OPTIONS    "'a' to add note | | 'e' to edit note | | 'd' to delete note | | 'f' to filter"
+#define HELP_OPTIONS    "'a' to add note | | 'e' to edit note | | 'd' to delete note | | 'f' to filter || 'c' to clear filter"
 #define FILTER_STRING   "Enter text to filter on: "
 void draw_list_menu(void)
 {
 	WINDOW *menu_win, *help_win;
 	MENU *menu;
-	ITEM **items, **filtered=NULL;
+	ITEM **items, **filtered = NULL;
 	ITEM *temp;
-	char *tag, *note;
+	char *tag, *note, **filter_seq = NULL;
 	int maxrows, maxcols;
-	int i, inp, idx;
-	int items_len, filter_len;
+	int i, inp, idx, menu_idx;
+	int items_len, filter_len, filter_seq_len = 0;
 
 	curs_set(0);		// Invisible cursor.
 	getmaxyx(stdscr, maxrows, maxcols);	// This is a macro, so no pointers.
@@ -237,6 +239,7 @@ void draw_list_menu(void)
 				menu_driver(menu, REQ_SCR_UPAGE);
 				break;
 			case 'a':
+				//TODO: What to do when filtered.
 				tag = malloc(TAG_MAX_SIZE * sizeof(char));
 				note = malloc(NOTE_MAX_SIZE * sizeof(char));
 				temp = current_item(menu);
@@ -266,7 +269,10 @@ void draw_list_menu(void)
 				temp = current_item(menu);
 				tag = (char *) item_name(temp);
 				note = (char *) item_description(temp);
-				idx = item_index(temp);
+				// menu_idx and idx only differ when filtered.
+				menu_idx = item_index(temp);		// index in menu.
+				idx = find_item_index(items, temp);	// index in items array.
+				// If no item is selected do nothing.
 				if(!temp)
 					continue;
 
@@ -275,12 +281,25 @@ void draw_list_menu(void)
 
 				// TODO: Validate tag and note, inside the function, or here.
 				view_note_form(tag, note, TRUE);
-
 				free_item(items[idx]);
 				items[idx] = new_item(tag, note);
 
-				set_menu_items(menu, items);
-				set_current_item(menu, items[idx]);
+				// If filtered, need to refilter when we edit an item.
+				if(filtered)
+				{
+					filter_len = refilter_tag(items, filtered, items_len, filter_seq, filter_seq_len);
+					set_menu_items(menu, filtered);
+					// Restore cursor position, unless it was removed when filtering.
+					if(set_current_item(menu, filtered[menu_idx]) != E_OK)
+						set_current_item(menu, filtered[menu_idx == 0 ? 0 : --menu_idx]);
+				}
+				else
+				{
+					set_menu_items(menu, items);
+					// Restore cursor position.
+					set_current_item(menu, items[menu_idx]);
+				}
+
 				post_menu(menu);
 
 				draw_menu_win(menu_win);
@@ -289,13 +308,16 @@ void draw_list_menu(void)
 				temp = current_item(menu);
 				tag = (char *) item_name(temp);
 				note = (char *) item_description(temp);
-				idx = item_index(temp);
+				// menu_idx and idx only differ when filtered.
+				menu_idx = item_index(temp);		// index in menu.
+				idx = find_item_index(items, temp);	// index in items array.
 				// If no item is selected do nothing.
 				if(!temp)
 					continue;
 
 				unpost_menu(menu);
 				set_menu_items(menu, NULL);
+				// Delete old item information.
 				free(tag);
 				free(note);
 				free_item(items[idx]);
@@ -306,39 +328,57 @@ void draw_list_menu(void)
 				// Shift items left to take up space from deletion.
 				shift_items_left(items, idx, items_len);
 
-				set_menu_items(menu, items);
-				set_current_item(menu, items[idx == 0 ? 0 : --idx]);
+				// If filtered, need to refilter when we delete an item.
+				if(filtered)
+				{
+					filter_len = refilter_tag(items, filtered, items_len, filter_seq, filter_seq_len);
+					set_menu_items(menu, filtered);
+					// Restore cursor position.
+					set_current_item(menu, filtered[menu_idx == 0 ? 0 : --menu_idx]);
+				}
+				else
+				{
+					set_menu_items(menu, items);
+					// Restore cursor position.
+					set_current_item(menu, items[menu_idx == 0 ? 0 : --menu_idx]);
+				}
 				post_menu(menu);
 
 				draw_menu_win(menu_win);
 				break;
 			case 'f':		// Filter by tags.
+				// TODO: Undo a level of filtering.
 				// TODO: Filter by description.
-				// TODO: Do something when no filter matches.
-				// TODO: Does delete and edit, etc. work when filtered? Doubt it.
-				tag = malloc(TAG_MAX_SIZE * sizeof(char));
 
+				// We may need to redo our filtering, after an edit for example, so
+				// store all our searches.
+				filter_seq = realloc(filter_seq, (filter_seq_len+1) * sizeof(char *));
+				filter_seq[filter_seq_len] = malloc(TAG_MAX_SIZE * sizeof(char));
+
+				// Prompt user for string.
 				mvwprintw(help_win, ROWS_FOR_HELP/2, GAP, FILTER_STRING);
 				wclrtoeol(help_win);
-
 				curs_set(1);
 				echo();
-				wgetnstr(help_win, tag, (TAG_MAX_SIZE-1) * sizeof(char));
+				wgetnstr(help_win, filter_seq[filter_seq_len], (TAG_MAX_SIZE-1) * sizeof(char));
 				noecho();
 				curs_set(0);
 
+				unpost_menu(menu);
+				// Don't want to modify something attached to the menu, so detach it.
+				set_menu_items(menu, NULL);
+				// Filter the original notes list or an already filtered one.
 				if(!filtered)
 				{
 					filtered = calloc(items_len, sizeof(ITEM *));
-					filter_len = filter_on_tag(items, filtered, items_len, tag);
+					filter_len = filter_on_tag(items, filtered, items_len, filter_seq[filter_seq_len]);
 				}
 				else
 				{
-					filter_len = filter_on_tag(filtered, filtered, filter_len, tag);
+					filter_len = filter_on_tag(filtered, filtered, filter_len, filter_seq[filter_seq_len]);
 				}
-				free(tag);
+				filter_seq_len++;
 
-				unpost_menu(menu);
 				set_menu_items(menu, filtered);
 				post_menu(menu);
 
@@ -348,15 +388,21 @@ void draw_list_menu(void)
 			case 'c':		// Clear filter.
 				if(filtered)
 				{
-					free(filtered);
-					filtered = NULL;
-
+					// Repost all notes.
 					unpost_menu(menu);
 					set_menu_items(menu, items);
-					set_menu_items(menu, items);
 					post_menu(menu);
-
 					draw_menu_win(menu_win);
+
+					// Free all memory.
+					free(filtered);
+					for(i = 0; i < filter_seq_len; i++)
+						free(filter_seq[i]);
+					free(filter_seq);
+					// Set to initial values.
+					filter_seq_len = 0;
+					filtered = NULL;
+					filter_seq = NULL;
 				}
 				break;
 			default:
@@ -377,7 +423,12 @@ void draw_list_menu(void)
 	}
 	free(items);
 	if(filtered)
+	{
 		free(filtered);
+		for(i = 0; i < filter_seq_len; i++)
+			free(filter_seq[i]);
+		free(filter_seq);
+	}
 	delwin(help_win);
 	delwin(menu_win);
 }
@@ -451,6 +502,16 @@ void shift_items_left(ITEM **items, int start_index, int length)
 	items[length-1] = NULL;
 }
 
+int refilter_tag(ITEM **src, ITEM **dst, int items_len, char **seq, int seq_len)
+{
+	int i, filter_len;
+	filter_len = filter_on_tag(src, dst, items_len, seq[0]);
+	// Filter the filtered data.
+	for(i = 1; i < seq_len; i++)
+		filter_len = filter_on_tag(dst, dst, filter_len, seq[i]);
+	return filter_len;
+}
+
 int filter_on_tag(ITEM **src, ITEM **dst, int length, char *string)
 {
 	int i, filter_idx;
@@ -495,4 +556,16 @@ void draw_help_win(WINDOW *win)
 	mvwprintw(win, 0, (cols-strlen(HELP_WINDOW_STR))/2, HELP_WINDOW_STR);
 	mvwprintw(win, ROWS_FOR_HELP/2, GAP, HELP_OPTIONS);
 	wrefresh(win);
+}
+
+// TODO: Or just store the index in the items list with user pointers.
+int find_item_index(ITEM **items, ITEM *needle)
+{
+	int i;
+	for(i = 0; *items; items++, i++)
+	{
+		if(*items == needle)
+			return i;
+	}
+	return -1;
 }
