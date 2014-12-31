@@ -188,7 +188,7 @@ void trim_trailing_whitespace(char *str)
 #define ROWS_FOR_HELP 3
 #define NOTE_WINDOW_STR " Notes "
 #define HELP_WINDOW_STR " HELP "
-#define HELP_OPTIONS    "'a' to add note | | 'e' to edit note | | 'd' to delete note | | 'f' to filter || 'c' to clear filter"
+#define HELP_OPTIONS    "'a' to add note | | 'e' to edit note | | 'd' to delete note | | 'f' to filter | | 'c' to clear filter"
 #define FILTER_STRING   "Enter text to filter on: "
 void draw_list_menu(void)
 {
@@ -387,6 +387,23 @@ void draw_list_menu(void)
 				draw_help_win(help_win);
 				draw_menu_win(menu_win);
 				break;
+			case 'u':
+				if(filter_seq_len >= 2)
+				{
+					free(filter_seq[filter_seq_len-1]);
+					filter_seq = realloc(filter_seq, (filter_seq_len-1) * sizeof(char *));
+					filter_seq_len--;
+
+					unpost_menu(menu);
+					set_menu_items(menu, NULL);
+
+					filter_len = refilter_tag(items, filtered, items_len, filter_seq, filter_seq_len);
+					set_menu_items(menu, filtered);
+
+					post_menu(menu);
+					draw_menu_win(menu_win);
+					break;
+				}		// else fallthrough
 			case 'c':		// Clear filter.
 				if(filtered)
 				{
