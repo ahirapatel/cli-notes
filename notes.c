@@ -249,8 +249,7 @@ void draw_list_menu(void)
 			case KEY_PPAGE:
 				menu_driver(menu, REQ_SCR_UPAGE);
 				break;
-			case 'a':
-				//TODO: What to do when filtered.
+			case 'a':	// Add note.
 				tag = malloc(TAG_MAX_SIZE * sizeof(char));
 				note = malloc(NOTE_MAX_SIZE * sizeof(char));
 				temp = current_item(menu);
@@ -270,13 +269,24 @@ void draw_list_menu(void)
 				// These pointers will be freed by looping through items later.
 				tag = note = NULL;
 
-				set_menu_items(menu, items);
+				if(filtered)
+				{
+					filtered = realloc(filtered, items_len * sizeof(ITEM *));
+					filter_len = refilter_tag(items, filtered, items_len, filter_seq, filter_seq_len);
+					set_menu_items(menu, filtered);
+				}
+				else
+				{
+					set_menu_items(menu, items);
+				}
+
+				// Restore cursor position.
 				set_current_item(menu, temp);
 				post_menu(menu);
 
 				draw_menu_win(menu_win);
 				break;
-			case 'e':
+			case 'e':	// Edit a note.
 				temp = current_item(menu);
 				tag = (char *) item_name(temp);
 				note = (char *) item_description(temp);
@@ -315,7 +325,7 @@ void draw_list_menu(void)
 
 				draw_menu_win(menu_win);
 				break;
-			case 'd':
+			case 'd':	// Delete a note.
 				temp = current_item(menu);
 				tag = (char *) item_name(temp);
 				note = (char *) item_description(temp);
@@ -358,7 +368,6 @@ void draw_list_menu(void)
 				draw_menu_win(menu_win);
 				break;
 			case 'f':		// Filter by tags.
-				// TODO: Undo a level of filtering.
 				// TODO: Filter by description.
 
 				// We may need to redo our filtering, after an edit for example, so
@@ -389,7 +398,7 @@ void draw_list_menu(void)
 				draw_help_win(help_win, help_array, help_array_len);
 				draw_menu_win(menu_win);
 				break;
-			case 'u':
+			case 'u':	// Undo a filter level.
 				if(filter_seq_len >= 2)
 				{
 					free(filter_seq[filter_seq_len-1]);
