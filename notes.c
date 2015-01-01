@@ -14,9 +14,11 @@ void shift_items_left(ITEM **items, int start_index, int length);
 int filter_on_tag(ITEM **src, ITEM **dst, int length, char *string);
 int filter_on_desc(ITEM **src, ITEM **dst, int length, char *string);
 void draw_menu_win(WINDOW *win);
-void draw_help_win(WINDOW *win);
+void draw_help_win(WINDOW *win, char **help_array, int help_array_len);
 int find_item_index(ITEM **items, ITEM *key);
 int refilter_tag(ITEM **src, ITEM **dst, int items_len, char **seq, int seq_len);
+char ** generate_help_str(int *rows_return);
+void get_user_str(WINDOW *win, char *str);
 
 #define TAG_ROWS  1
 #define TAG_COLS  10
@@ -185,10 +187,15 @@ void trim_trailing_whitespace(char *str)
 }
 
 // TODO: Better resizing.
-#define ROWS_FOR_HELP 3
 #define NOTE_WINDOW_STR " Notes "
 #define HELP_WINDOW_STR " HELP "
-#define HELP_OPTIONS    "'a' to add note | | 'e' to edit note | | 'd' to delete note | | 'f' to filter | | 'c' to clear filter"
+#define HELP_DELIM " | | "
+#define ADD_NOTE "'a' to add note" HELP_DELIM
+#define EDIT_NOTE "'e' to edit note" HELP_DELIM
+#define DELETE_NOTE "'d' to delete note" HELP_DELIM
+#define FILTER_NOTE "'f' to filter" HELP_DELIM
+#define CLEAR_NOTE "'c' to clear filter" HELP_DELIM
+#define UNDO_NOTE "'u' to undo 1 filter level"
 #define FILTER_STRING   "Enter text to filter on: "
 void draw_list_menu(void)
 {
@@ -196,15 +203,17 @@ void draw_list_menu(void)
 	MENU *menu;
 	ITEM **items, **filtered = NULL;
 	ITEM *temp;
-	char *tag, *note, **filter_seq = NULL;
-	int maxrows, maxcols;
+	char *tag, *note, **filter_seq = NULL, **help_array;
+	int maxrows, maxcols, rows_for_help, help_array_len;
 	int i, inp, idx, menu_idx;
 	int items_len, filter_len, filter_seq_len = 0;
 
 	curs_set(0);		// Invisible cursor.
 	getmaxyx(stdscr, maxrows, maxcols);	// This is a macro, so no pointers.
-	menu_win = newwin(maxrows-ROWS_FOR_HELP, maxcols, 0, 0);
-	help_win = newwin(ROWS_FOR_HELP, maxcols, maxrows-ROWS_FOR_HELP, 0);
+	help_array = generate_help_str(&help_array_len);
+	rows_for_help = help_array_len + GAP;
+	menu_win = newwin(maxrows-rows_for_help, maxcols, 0, 0);
+	help_win = newwin(rows_for_help, maxcols, maxrows-rows_for_help, 0);
 
 	keypad(menu_win, TRUE);
 
@@ -213,15 +222,15 @@ void draw_list_menu(void)
 
 	menu = new_menu(items);
 	set_menu_win(menu, menu_win);
-	set_menu_sub(menu, derwin(menu_win, maxrows-ROWS_FOR_HELP-GAP, maxcols-GAP, GAP, GAP));
-	set_menu_format(menu, maxrows-ROWS_FOR_HELP-2*GAP, 1);
+	set_menu_sub(menu, derwin(menu_win, maxrows-rows_for_help-GAP, maxcols-GAP, GAP, GAP));
+	set_menu_format(menu, maxrows-rows_for_help-2*GAP, 1);
 	set_menu_pad(menu, '|');
 	set_menu_spacing(menu, 4, 0, 0);
 	set_menu_mark(menu, " o ");
 
 	post_menu(menu);
 	draw_menu_win(menu_win);
-	draw_help_win(help_win);
+	draw_help_win(help_win, help_array, help_array_len);
 
 	// TODO: Make it exit on an actual value, maybe ctrl-c or esc.
 	while((inp = wgetch(menu_win)) != 13)		// This is enter.
@@ -357,14 +366,7 @@ void draw_list_menu(void)
 				filter_seq = realloc(filter_seq, (filter_seq_len+1) * sizeof(char *));
 				filter_seq[filter_seq_len] = malloc(TAG_MAX_SIZE * sizeof(char));
 
-				// Prompt user for string.
-				mvwprintw(help_win, ROWS_FOR_HELP/2, GAP, FILTER_STRING);
-				wclrtoeol(help_win);
-				curs_set(1);
-				echo();
-				wgetnstr(help_win, filter_seq[filter_seq_len], (TAG_MAX_SIZE-1) * sizeof(char));
-				noecho();
-				curs_set(0);
+				get_user_str(help_win, filter_seq[filter_seq_len]);
 
 				unpost_menu(menu);
 				// Don't want to modify something attached to the menu, so detach it.
@@ -384,7 +386,7 @@ void draw_list_menu(void)
 				set_menu_items(menu, filtered);
 				post_menu(menu);
 
-				draw_help_win(help_win);
+				draw_help_win(help_win, help_array, help_array_len);
 				draw_menu_win(menu_win);
 				break;
 			case 'u':
@@ -448,6 +450,9 @@ void draw_list_menu(void)
 			free(filter_seq[i]);
 		free(filter_seq);
 	}
+	for(i = 0; i < help_array_len; i++)
+		free(help_array[i]);
+	free(help_array);
 	delwin(help_win);
 	delwin(menu_win);
 }
@@ -567,13 +572,51 @@ void draw_menu_win(WINDOW *win)
 	wrefresh(win);
 }
 
-void draw_help_win(WINDOW *win)
+char ** generate_help_str(int *rows_return)
 {
-	int rows, cols;
+	char *help_options[] = {ADD_NOTE, EDIT_NOTE, DELETE_NOTE,
+							FILTER_NOTE, CLEAR_NOTE, UNDO_NOTE};
+	int help_options_len = sizeof(help_options)/sizeof(char *);
+	int rows_needed=1, curr_col=0, i=0;
+	unsigned maxrows, maxcols;
+	char **res=NULL;
+
+	getmaxyx(stdscr, maxrows, maxcols);
+	maxcols -= 2*GAP; // Padding on each side.
+	res = realloc(res, rows_needed * sizeof(char *));
+	res[0] = calloc(maxcols, sizeof(char));
+
+	// NOTE: Will print potentially nothing on small windows and will
+	//       waste space at the bottom too.
+	while(i < help_options_len && rows_needed < help_options_len)
+	{
+		if((curr_col + strlen(help_options[i])) > maxcols)
+		{
+			rows_needed++;
+			res = realloc(res, rows_needed * sizeof(char *));
+			res[rows_needed-1] = calloc(maxcols, sizeof(char));
+			curr_col = GAP;
+		}
+		else
+		{
+			curr_col += strlen(help_options[i]);
+			strcat(res[rows_needed-1], help_options[i]);
+			i++;
+		}
+	}
+
+	*rows_return = rows_needed;
+	return res;
+}
+
+void draw_help_win(WINDOW *win, char **help_array, int help_array_len)
+{
+	int rows, cols, i;
 	getmaxyx(win, rows, cols);
 	box(win, 0, 0);
 	mvwprintw(win, 0, (cols-strlen(HELP_WINDOW_STR))/2, HELP_WINDOW_STR);
-	mvwprintw(win, ROWS_FOR_HELP/2, GAP, HELP_OPTIONS);
+	for(i = 0; i < help_array_len; i++)
+		mvwprintw(win, i+1, GAP, help_array[i]);
 	wrefresh(win);
 }
 
@@ -588,3 +631,16 @@ int find_item_index(ITEM **items, ITEM *needle)
 	}
 	return -1;
 }
+
+void get_user_str(WINDOW *win, char *str)
+{
+	wclear(win);
+
+	mvwprintw(win, 0, GAP, FILTER_STRING);
+	curs_set(1);
+	echo();
+	wgetnstr(win, str, (TAG_MAX_SIZE-1) * sizeof(char));
+	noecho();
+	curs_set(0);
+}
+
