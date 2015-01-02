@@ -1,3 +1,4 @@
+// TODO: Everything really shouldn't be in a single file...
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -5,20 +6,26 @@
 #include <form.h>
 #include <menu.h>
 
+typedef enum {TAG, NOTE} filter_type;
+typedef struct
+{
+	char *str;
+	filter_type type;
+} filter_item;
+
 void trim_trailing_whitespace(char *str);
 void view_note_form(char *tag, char *note, bool init);
 void draw_list_menu(void);
 ITEM ** load_items(int *items_len);
 void store_items(ITEM **items, int items_len);
 void shift_items_left(ITEM **items, int start_index, int length);
-int filter_on_tag(ITEM **src, ITEM **dst, int length, char *string);
-int filter_on_desc(ITEM **src, ITEM **dst, int length, char *string);
+int filter_on(ITEM **src, ITEM **dst, int length, filter_item f);
 void draw_menu_win(WINDOW *win);
 void draw_help_win(WINDOW *win, char **help_array, int help_array_len);
 int find_item_index(ITEM **items, ITEM *key);
-int refilter_tag(ITEM **src, ITEM **dst, int items_len, char **seq, int seq_len);
+int refilter(ITEM **src, ITEM **dst, int items_len, filter_item *seq, int seq_len);
 char ** generate_help_str(int *rows_return);
-void get_user_str(WINDOW *win, char *str);
+void get_user_str(WINDOW *win, char *prompt, char *retval);
 
 #define TAG_ROWS  1
 #define TAG_COLS  10
@@ -193,17 +200,20 @@ void trim_trailing_whitespace(char *str)
 #define ADD_NOTE "'a' to add note" HELP_DELIM
 #define EDIT_NOTE "'e' to edit note" HELP_DELIM
 #define DELETE_NOTE "'d' to delete note" HELP_DELIM
-#define FILTER_NOTE "'f' to filter" HELP_DELIM
+#define TAG_FILTER_NOTE "'f' to filter on tag" HELP_DELIM
+#define NOTE_FILTER_NOTE "'F' to filter on note" HELP_DELIM
 #define CLEAR_NOTE "'c' to clear filter" HELP_DELIM
 #define UNDO_NOTE "'u' to undo 1 filter level"
-#define FILTER_STRING   "Enter text to filter on: "
+#define FILTER_TAG_STRING   "Enter text to filter tags: "
+#define FILTER_NOTE_STRING   "Enter text to filter notes: "
 void draw_list_menu(void)
 {
 	WINDOW *menu_win, *help_win;
 	MENU *menu;
 	ITEM **items, **filtered = NULL;
 	ITEM *temp;
-	char *tag, *note, **filter_seq = NULL, **help_array;
+	char *tag, *note, **help_array;
+	filter_item *filter_seq = NULL;
 	int maxrows, maxcols, rows_for_help, help_array_len;
 	int i, inp, idx, menu_idx;
 	int items_len, filter_len, filter_seq_len = 0;
@@ -272,7 +282,7 @@ void draw_list_menu(void)
 				if(filtered)
 				{
 					filtered = realloc(filtered, items_len * sizeof(ITEM *));
-					filter_len = refilter_tag(items, filtered, items_len, filter_seq, filter_seq_len);
+					filter_len = refilter(items, filtered, items_len, filter_seq, filter_seq_len);
 					set_menu_items(menu, filtered);
 				}
 				else
@@ -308,7 +318,7 @@ void draw_list_menu(void)
 				// If filtered, need to refilter when we edit an item.
 				if(filtered)
 				{
-					filter_len = refilter_tag(items, filtered, items_len, filter_seq, filter_seq_len);
+					filter_len = refilter(items, filtered, items_len, filter_seq, filter_seq_len);
 					set_menu_items(menu, filtered);
 					// Restore cursor position, unless it was removed when filtering.
 					if(set_current_item(menu, filtered[menu_idx]) != E_OK)
@@ -352,7 +362,7 @@ void draw_list_menu(void)
 				// If filtered, need to refilter when we delete an item.
 				if(filtered)
 				{
-					filter_len = refilter_tag(items, filtered, items_len, filter_seq, filter_seq_len);
+					filter_len = refilter(items, filtered, items_len, filter_seq, filter_seq_len);
 					set_menu_items(menu, filtered);
 					// Restore cursor position.
 					set_current_item(menu, filtered[menu_idx == 0 ? 0 : --menu_idx]);
@@ -367,15 +377,18 @@ void draw_list_menu(void)
 
 				draw_menu_win(menu_win);
 				break;
+			case 'F':		// Filter by description.
 			case 'f':		// Filter by tags.
 				// TODO: Filter by description.
 
 				// We may need to redo our filtering, after an edit for example, so
 				// store all our searches.
-				filter_seq = realloc(filter_seq, (filter_seq_len+1) * sizeof(char *));
-				filter_seq[filter_seq_len] = malloc(TAG_MAX_SIZE * sizeof(char));
+				filter_seq = realloc(filter_seq, (filter_seq_len+1) * sizeof(filter_item));
+				filter_seq[filter_seq_len].str = malloc(TAG_MAX_SIZE * sizeof(char));
+				filter_seq[filter_seq_len].type = inp == 'f' ? TAG : NOTE;
 
-				get_user_str(help_win, filter_seq[filter_seq_len]);
+				get_user_str(help_win, inp == 'f' ? FILTER_TAG_STRING : FILTER_NOTE_STRING,
+						filter_seq[filter_seq_len].str);
 
 				unpost_menu(menu);
 				// Don't want to modify something attached to the menu, so detach it.
@@ -384,11 +397,11 @@ void draw_list_menu(void)
 				if(!filtered)
 				{
 					filtered = calloc(items_len, sizeof(ITEM *));
-					filter_len = filter_on_tag(items, filtered, items_len, filter_seq[filter_seq_len]);
+					filter_len = filter_on(items, filtered, items_len, filter_seq[filter_seq_len]);
 				}
 				else
 				{
-					filter_len = filter_on_tag(filtered, filtered, filter_len, filter_seq[filter_seq_len]);
+					filter_len = filter_on(filtered, filtered, filter_len, filter_seq[filter_seq_len]);
 				}
 				filter_seq_len++;
 
@@ -401,14 +414,14 @@ void draw_list_menu(void)
 			case 'u':	// Undo a filter level.
 				if(filter_seq_len >= 2)
 				{
-					free(filter_seq[filter_seq_len-1]);
-					filter_seq = realloc(filter_seq, (filter_seq_len-1) * sizeof(char *));
+					free(filter_seq[filter_seq_len-1].str);
+					filter_seq = realloc(filter_seq, (filter_seq_len-1) * sizeof(filter_item));
 					filter_seq_len--;
 
 					unpost_menu(menu);
 					set_menu_items(menu, NULL);
 
-					filter_len = refilter_tag(items, filtered, items_len, filter_seq, filter_seq_len);
+					filter_len = refilter(items, filtered, items_len, filter_seq, filter_seq_len);
 					set_menu_items(menu, filtered);
 
 					post_menu(menu);
@@ -427,7 +440,7 @@ void draw_list_menu(void)
 					// Free all memory.
 					free(filtered);
 					for(i = 0; i < filter_seq_len; i++)
-						free(filter_seq[i]);
+						free(filter_seq[i].str);
 					free(filter_seq);
 					// Set to initial values.
 					filter_seq_len = 0;
@@ -447,6 +460,7 @@ void draw_list_menu(void)
 	free_menu(menu);
 	for(i = 0; i < items_len-1; i++)
 	{
+		// TODO: Just use those nice item_name/desc functions.
 		free((void *)items[i]->name.str);
 		free((void *)items[i]->description.str);
 		free_item(items[i]);
@@ -456,7 +470,7 @@ void draw_list_menu(void)
 	{
 		free(filtered);
 		for(i = 0; i < filter_seq_len; i++)
-			free(filter_seq[i]);
+			free(filter_seq[i].str);
 		free(filter_seq);
 	}
 	for(i = 0; i < help_array_len; i++)
@@ -523,6 +537,7 @@ void store_items(ITEM **items, int items_len)
 	int i;
 	FILE *f = fopen(NOTES_FILE, "w");
 	for(i = 0; i < items_len-1; i++)
+		// TODO: Just use those nice item_name/desc functions.
 		fprintf(f, "%s\t%s\n", items[i]->name.str, items[i]->description.str);
 	fclose(f);
 }
@@ -535,34 +550,23 @@ void shift_items_left(ITEM **items, int start_index, int length)
 	items[length-1] = NULL;
 }
 
-int refilter_tag(ITEM **src, ITEM **dst, int items_len, char **seq, int seq_len)
+int refilter(ITEM **src, ITEM **dst, int items_len, filter_item *seq, int seq_len)
 {
 	int i, filter_len;
-	filter_len = filter_on_tag(src, dst, items_len, seq[0]);
+	filter_len = filter_on(src, dst, items_len, seq[0]);
 	// Filter the filtered data.
 	for(i = 1; i < seq_len; i++)
-		filter_len = filter_on_tag(dst, dst, filter_len, seq[i]);
+		filter_len = filter_on(dst, dst, filter_len, seq[i]);
 	return filter_len;
 }
 
-int filter_on_tag(ITEM **src, ITEM **dst, int length, char *string)
+int filter_on(ITEM **src, ITEM **dst, int length, filter_item f)
 {
 	int i, filter_idx;
+	const char *(*item_info)(const ITEM *) = f.type == TAG ? item_name : item_description;
 	for(i = 0, filter_idx = 0; i < length-1; i++)
 	{
-		if(strstr(item_name(src[i]), string))
-			dst[filter_idx++] = src[i];
-	}
-	dst[filter_idx] = NULL;
-	return filter_idx+1;
-}
-
-int filter_on_desc(ITEM **src, ITEM **dst, int length, char *string)
-{
-	int i, filter_idx;
-	for(i = 0, filter_idx = 0; i < length-1; i++)
-	{
-		if(strstr(item_description(src[i]), string))
+		if(strstr(item_info(src[i]), f.str))
 			dst[filter_idx++] = src[i];
 	}
 	dst[filter_idx] = NULL;
@@ -583,8 +587,8 @@ void draw_menu_win(WINDOW *win)
 
 char ** generate_help_str(int *rows_return)
 {
-	char *help_options[] = {ADD_NOTE, EDIT_NOTE, DELETE_NOTE,
-							FILTER_NOTE, CLEAR_NOTE, UNDO_NOTE};
+	char *help_options[] = {ADD_NOTE, EDIT_NOTE, DELETE_NOTE, TAG_FILTER_NOTE,
+							NOTE_FILTER_NOTE, CLEAR_NOTE, UNDO_NOTE};
 	int help_options_len = sizeof(help_options)/sizeof(char *);
 	int rows_needed=1, curr_col=0, i=0;
 	unsigned maxrows, maxcols;
@@ -641,14 +645,14 @@ int find_item_index(ITEM **items, ITEM *needle)
 	return -1;
 }
 
-void get_user_str(WINDOW *win, char *str)
+void get_user_str(WINDOW *win, char *prompt, char *retval)
 {
 	wclear(win);
 
-	mvwprintw(win, 0, GAP, FILTER_STRING);
+	mvwprintw(win, 0, GAP, prompt);
 	curs_set(1);
 	echo();
-	wgetnstr(win, str, (TAG_MAX_SIZE-1) * sizeof(char));
+	wgetnstr(win, retval, (TAG_MAX_SIZE-1) * sizeof(char));
 	noecho();
 	curs_set(0);
 }
