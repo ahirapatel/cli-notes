@@ -47,7 +47,6 @@ void get_user_str(WINDOW *win, char *prompt, char *retval);
 int main()
 {
 	initscr();
-	start_color();
 	cbreak();
 	/* Enter is 13 with it, and 10 without it. This should have made a check
 	 *  against KEY_ENTER work, but it didn't. */
@@ -55,7 +54,13 @@ int main()
 	noecho();
 	keypad(stdscr, TRUE);	// TODO: Needed?
 
-	init_pair(1, COLOR_WHITE, COLOR_BLUE);
+	if(has_colors())
+	{
+		start_color();
+		init_pair(1, COLOR_YELLOW, COLOR_BLACK);
+		init_pair(2, COLOR_RED, COLOR_BLACK);
+		init_pair(3, COLOR_GREEN, COLOR_BLACK);
+	}
 
 	draw_list_menu();
 
@@ -82,10 +87,10 @@ void view_note_form(char *tag, char *note, bool init)
 	fields[0] = new_field(TAG_ROWS,  TAG_COLS,  0,                0, 0, 0);
 	fields[1] = new_field(NOTE_ROWS, NOTE_COLS, 0+TAG_ROWS+GAP-1, 0, 0, 0);
 	fields[2] = NULL;
-	set_field_back(fields[0], A_UNDERLINE);
+	set_field_back(fields[0], A_UNDERLINE | COLOR_PAIR(2));
 	field_opts_off(fields[0], O_AUTOSKIP);
 	field_opts_on(fields[0], O_BLANK);
-	set_field_back(fields[1], A_UNDERLINE);
+	set_field_back(fields[1], A_UNDERLINE | COLOR_PAIR(2));
 	field_opts_off(fields[1], O_AUTOSKIP);
 	field_opts_off(fields[1], O_WRAP);
 	field_opts_on(fields[1], O_BLANK);
@@ -103,6 +108,7 @@ void view_note_form(char *tag, char *note, bool init)
 	keypad(window, TRUE);	// TODO: Needed?
 
 	// Draw a border around the form and print form info text.
+	wattrset(window, COLOR_PAIR(1));
 	box(window, 0, 0);
 	mvwaddstr(window, 0,       (wincols-strlen(NOTE_HEADER))/2, NOTE_HEADER);
 	mvwaddstr(window, FORM_START_Y,     GAP, TAG_STR);
@@ -237,6 +243,8 @@ void draw_list_menu(void)
 	set_menu_pad(menu, '|');
 	set_menu_spacing(menu, 4, 0, 0);
 	set_menu_mark(menu, " o ");
+	set_menu_fore(menu, COLOR_PAIR(3) | A_REVERSE);
+	set_menu_back(menu, COLOR_PAIR(1));
 
 	post_menu(menu);
 	draw_menu_win(menu_win);
@@ -580,6 +588,7 @@ void draw_menu_win(WINDOW *win)
 {
 	int rows, cols;
 	getmaxyx(win, rows, cols);
+	wattrset(win, COLOR_PAIR(1));
 	box(win, 0, 0);
 	mvwprintw(win, 0, (cols-strlen(NOTE_WINDOW_STR))/2, NOTE_WINDOW_STR);
 	wrefresh(win);
@@ -626,6 +635,7 @@ void draw_help_win(WINDOW *win, char **help_array, int help_array_len)
 {
 	int rows, cols, i;
 	getmaxyx(win, rows, cols);
+	wattrset(win, COLOR_PAIR(1));
 	box(win, 0, 0);
 	mvwprintw(win, 0, (cols-strlen(HELP_WINDOW_STR))/2, HELP_WINDOW_STR);
 	for(i = 0; i < help_array_len; i++)
@@ -649,7 +659,9 @@ void get_user_str(WINDOW *win, char *prompt, char *retval)
 {
 	wclear(win);
 
+	wattron(win, COLOR_PAIR(3));
 	mvwprintw(win, 0, GAP, prompt);
+	wattroff(win, COLOR_PAIR(3));
 	curs_set(1);
 	echo();
 	wgetnstr(win, retval, (TAG_MAX_SIZE-1) * sizeof(char));
